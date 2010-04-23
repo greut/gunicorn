@@ -9,6 +9,7 @@ import os
 import pkg_resources
 import sys
 
+from gunicorn.arbiter import Arbiter
 from gunicorn.config import Config
 from gunicorn.debug import spew
 from gunicorn import util, __version__
@@ -32,9 +33,9 @@ def options():
             help='Adress to listen on. Ex. 127.0.0.1:8000 or unix:/tmp/gunicorn.sock'),
         op.make_option('-w', '--workers', dest='workers',
             help='Number of workers to spawn. [1]'),
-        op.make_option('-a', '--arbiter', dest='arbiter',
-            help="gunicorn arbiter entry point or module "+
-            "[egg:gunicorn#main]"),
+        op.make_option('-k', '--worker-class', dest='worker_class',
+            help="The type of request processing to use "+
+            "[egg:gunicorn#sync]"),
         op.make_option('-p','--pid', dest='pidfile',
             help='set the background PID FILE'),
         op.make_option('-D', '--daemon', dest='daemon', action="store_true",
@@ -57,135 +58,50 @@ def options():
             default=False, help="Install a trace hook")
     ]
 
-def configure_logging(opts):
-    """
-    Set level of logging, and choose where to display/save logs (file or standard output).
-    """
-    handlers = []
-    if opts['logfile'] != "-":
-        handlers.append(logging.FileHandler(opts['logfile']))
-    else:
-        handlers.append(logging.StreamHandler())
-
-    loglevel = LOG_LEVELS.get(opts['loglevel'].lower(), logging.INFO)
-
-    logger = logging.getLogger('gunicorn')
-    logger.setLevel(loglevel)
-    format = r"%(asctime)s [%(process)d] [%(levelname)s] %(message)s"
-    datefmt = r"%Y-%m-%d %H:%M:%S"
-    for h in handlers:
-        h.setFormatter(logging.Formatter(format, datefmt))
-        logger.addHandler(h)
-
-def daemonize():
-    """ if daemon option is set, this function will daemonize the master.
-    It's based on this activestate recipe :
-    http://code.activestate.com/recipes/278731/
-    """
-    if not 'GUNICORN_FD' in os.environ:
-        if os.fork() == 0: 
-            os.setsid()
-            if os.fork() != 0:
-                os.umask(0) 
-            else:
-                os._exit(0)
-        else:
-            os._exit(0)
-        
-        maxfd = util.get_maxfd()
-
-        # Iterate through and close all file descriptors.
-        for fd in range(0, maxfd):
-            try:
-                os.close(fd)
-            except OSError:	# ERROR, fd wasn't open to begin with (ignored)
-                pass
-        
-        os.open(util.REDIRECT_TO, os.O_RDWR)
-        os.dup2(0, 1)
-        os.dup2(0, 2)
-
-
-        
 def main(usage, get_app):
-    """ function used by different runners to setup options 
-    ans launch the arbiter. """
-    
-    parser = op.OptionParser(usage=usage, option_list=options(),
-                    version="%prog " + __version__)
+    """\
+    Used by the various runners to setup options and
+    launch the arbiter.
+    """
+    vrs = "%prog " + __version__
+    parser = op.OptionParser(usage=usage, option_list=options(), version=vrs)
     opts, args = parser.parse_args()
     
     app = get_app(parser, opts, args)
-    conf = Config(opts.__dict__, opts.config)
-    if conf['spew']:
+    cfg = Config(opts.__dict__, opts.config)
+    if cfg.spew:
         spew()
-    arbiter = conf.arbiter(conf.address, conf.workers, app, config=conf, 
-                debug=conf['debug'], pidfile=conf['pidfile'])
-    if conf['daemon']:
+    if cfg.daemon:
         daemonize()
     else:
         os.setpgrp()
-    configure_logging(conf)
-    arbiter.run()
+    configure_logging(cfg)
     
-def paste_server(app, global_conf=None, host="127.0.0.1", port=None, 
-            *args, **kwargs):
-    """ Paster server entrypoint to add to your paster ini file:
-    
-        [server:main]
-        use = egg:gunicorn#main
-        host = 127.0.0.1
-        port = 5000
-    
-    """
-    options = kwargs.copy()
-    if port and not host.startswith("unix:"):
-        bind = "%s:%s" % (host, port)
-    else:
-        bind = host
-    options['bind'] = bind
-
-    if global_conf:
-        for key, value in list(global_conf.items()):
-            if value and value is not None:
-                if key == "debug":
-                    value = (value == "true")
-                options[key] = value
-        options['default_proc_name'] = options['__file__']
-           
-    conf = Config(options)
-    if conf['spew']:
-        spew()
-    arbiter = conf.arbiter(conf.address, conf.workers, app, debug=conf["debug"], 
-                    pidfile=conf["pidfile"], config=conf)
-    if conf["daemon"] :
-        daemonize()
-    else:
-        os.setpgrp()
-    configure_logging(conf)
-    arbiter.run()
+    Arbiter(cfg, app).run()
     
 def run():
-    """ main runner used for gunicorn command to launch generic wsgi application """
-    
+    """\
+    The ``gunicorn`` command line runner for launcing Gunicorn with
+    generic WSGI applications.
+    """    
     sys.path.insert(0, os.getcwd())
     
     def get_app(parser, opts, args):
         if len(args) != 1:
             parser.error("No application module specified.")
-
-
         opts.default_proc_name = args[0]
-            
         try:
             return util.import_app(args[0])
-        except:
-            parser.error("Failed to import application module.")
+        except Exception, e:
+            parser.error("Failed to import application module:\n    %s" % e)
 
     main("%prog [OPTIONS] APP_MODULE", get_app)
     
 def run_django():
-    """ django runner for gunicorn_django command used to launch django applications """
+    """\
+    The ``gunicorn_django`` command line runner for launching Django
+    applications.
+    """
     
     def settings_notfound(path):
         error = "Settings file '%s' not found in current folder.\n" % path
@@ -224,35 +140,38 @@ def run_django():
         
         # django wsgi app
         return django.core.handlers.wsgi.WSGIHandler()
+        
+    
 
     main("%prog [OPTIONS] [SETTINGS_PATH]", get_app)
     
 def run_paster():
-    """ runner used for gunicorn_paster command to launch paster compatible applications 
-    (pylons, turbogears2, ...) """
+    """\
+    The ``gunicorn_paster`` command for launcing Paster compatible
+    apllications like Pylons or Turbogears2
+    """
     from paste.deploy import loadapp, loadwsgi
 
     def get_app(parser, opts, args):
         if len(args) != 1:
             parser.error("No application name specified.")
 
-        config_file = os.path.abspath(os.path.normpath(
-                            os.path.join(os.getcwd(), args[0])))
-
-        if not os.path.exists(config_file):
+        cfgfname = os.path.normpath(os.path.join(os.getcwd(), args[0]))
+        cfgfname = os.path.abspath(cfgfname)
+        if not os.path.exists(cfgfname):
             parser.error("Config file not found.")
 
-        config_url = 'config:%s' % config_file
-        relative_to = os.path.dirname(config_file)
+        cfgurl = 'config:%s' % cfgfname
+        relpath = os.path.dirname(cfgfname)
 
         # load module in sys path
-        sys.path.insert(0, relative_to)
+        sys.path.insert(0, relpath)
 
         # add to eggs
-        pkg_resources.working_set.add_entry(relative_to)
-        ctx = loadwsgi.loadcontext(loadwsgi.SERVER, config_url,
-                                relative_to=relative_to)
+        pkg_resources.working_set.add_entry(relpath)
+        ctx = loadwsgi.loadcontext(loadwsgi.SERVER, cfgurl, relative_to=relpath)
 
+        
         if not opts.workers:
             opts.workers = ctx.local_conf.get('workers', 1)
 
@@ -275,13 +194,104 @@ def run_paster():
                     bind = host
                 opts.bind = bind
 
+        for k, v in ctx.local_conf.items():
+            if not hasattr(opts, k):
+                setattr(opts, k, v)
+
         if not opts.debug:
             opts.debug = (ctx.global_conf.get('debug') == "true")
             
+            
         opts.default_proc_name= ctx.global_conf.get('__file__')
 
-        app = loadapp(config_url, relative_to=relative_to)
+        app = loadapp(cfgurl, relative_to=relpath)
         return app
 
     main("%prog [OPTIONS] pasteconfig.ini", get_app)
+
+def paste_server(app, gcfg=None, host="127.0.0.1", port=None, *args, **kwargs):
+    """\
+    A paster server.
     
+    Then entry point in your paster ini file should looks like this:
+    
+    [server:main]
+    use = egg:gunicorn#main
+    host = 127.0.0.1
+    port = 5000
+    
+    """
+    opts = kwargs.copy()
+    if port and not host.startswith("unix:"):
+        bind = "%s:%s" % (host, port)
+    else:
+        bind = host
+    opts['bind'] = bind
+
+    if gcfg:
+        for key, value in list(gcfg.items()):
+            if value and value is not None:
+                if key == "debug":
+                    value = (value == "true")
+                opts[key] = value
+        opts['default_proc_name'] = opts['__file__']
+    
+    cfg = Config(opts)
+    
+    if cfg.spew:
+        spew()
+    if cfg.daemon:
+        daemonize()
+    else:
+        os.setpgrp()
+    configure_logging(cfg)
+    Arbiter(cfg, app).run()
+
+def daemonize():
+    """\
+    Standard daemonization of a process. Code is basd on the
+    ActiveState recipe at:
+        http://code.activestate.com/recipes/278731/
+    """
+    if not 'GUNICORN_FD' in os.environ:
+        if os.fork() == 0: 
+            os.setsid()
+            if os.fork() != 0:
+                os.umask(0) 
+            else:
+                os._exit(0)
+        else:
+            os._exit(0)
+        
+        maxfd = util.get_maxfd()
+
+        # Iterate through and close all file descriptors.
+        for fd in range(0, maxfd):
+            try:
+                os.close(fd)
+            except OSError:	# ERROR, fd wasn't open to begin with (ignored)
+                pass
+        
+        os.open(util.REDIRECT_TO, os.O_RDWR)
+        os.dup2(0, 1)
+        os.dup2(0, 2)    
+
+def configure_logging(opts):
+    """\
+    Set the log level and choose the destination for log output.
+    """
+    handlers = []
+    if opts['logfile'] != "-":
+        handlers.append(logging.FileHandler(opts['logfile']))
+    else:
+        handlers.append(logging.StreamHandler())
+
+    loglevel = LOG_LEVELS.get(opts['loglevel'].lower(), logging.INFO)
+
+    logger = logging.getLogger('gunicorn')
+    logger.setLevel(loglevel)
+    format = r"%(asctime)s [%(process)d] [%(levelname)s] %(message)s"
+    datefmt = r"%Y-%m-%d %H:%M:%S"
+    for h in handlers:
+        h.setFormatter(logging.Formatter(format, datefmt))
+        logger.addHandler(h)

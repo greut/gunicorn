@@ -25,11 +25,11 @@ class Command(BaseCommand):
             help='Specifies the directory from which to serve admin media.'),
         make_option('-c', '--config', dest='gconfig', type='string',
             help='Gunicorn Config file. [%default]'),
+        make_option('-k', '--worker-class', dest='worker_class',
+            help="The type of request processing to use "+
+            "[egg:gunicorn#sync]"),
         make_option('-w', '--workers', dest='workers', 
             help='Specifies the number of worker processes to use.'),
-        make_option('-a', '--arbiter', dest='arbiter',
-            help="gunicorn arbiter entry point or module "+
-            "[egg:gunicorn#main]"),
         make_option('--pid', dest='pidfile',
             help='set the background PID file'),
         make_option( '--daemon', dest='daemon', action="store_true",
@@ -73,8 +73,7 @@ class Command(BaseCommand):
         
         try:
             handler = AdminMediaHandler(WSGIHandler(), admin_media_path)
-            arbiter = conf.arbiter(conf.address, conf.workers, handler,
-                pidfile=conf['pidfile'], config=conf)
+            arbiter = Arbiter(conf, handler)
             if conf['daemon']:
                 daemonize()
             else:

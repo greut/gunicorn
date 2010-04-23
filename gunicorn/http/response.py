@@ -3,7 +3,7 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
-from gunicorn.util import  close, http_date, write, write_chunk, is_hoppish
+from gunicorn.util import http_date, write, write_chunk, is_hoppish
 
 class Response(object):
     
@@ -56,4 +56,18 @@ class Response(object):
         if not self.headers_sent:
             self.send_headers()
         if self.chunked:
-            write_chunk(self.socket, "")
+            write_chunk(self.req.socket, "")
+
+class KeepAliveResponse(Response):
+
+    def default_headers(self):
+        connection = "keep-alive"
+        if self.req.parser.should_close:
+            connection = "close"
+
+        return [
+            "HTTP/1.1 %s\r\n" % self.status,
+            "Server: %s\r\n" % self.version,
+            "Date: %s\r\n" % http_date(),
+            "Connection: %s\r\n" % connection
+        ]

@@ -12,13 +12,12 @@ import os
 import select
 import signal
 import sys
-import tempfile
 import time
 import traceback
 
 from gunicorn.pidfile import Pidfile
 from gunicorn.sock import create_socket
-from gunicorn.worker import Worker
+from gunicorn.workers.sync import SyncWorker
 from gunicorn import util
 
 class Arbiter(object):
@@ -47,22 +46,29 @@ class Arbiter(object):
     
     pidfile = Pidfile()
 
-    def __init__(self, address, num_workers, app, **kwargs):
-        self.address = address
-        self.num_workers = num_workers
-        self.worker_age = 0
+    def __init__(self, cfg, app):
+        self.cfg = cfg
         self.app = app
-        self.conf = kwargs.get("config", {})
-        self.timeout = self.conf['timeout']
-        self.reexec_pid = 0
-        self.debug = kwargs.get("debug", False)
+
         self.log = logging.getLogger(__name__)
-        self.opts = kwargs
+
+        self.address = cfg.address
+        self.num_workers = cfg.workers
+        self.debug = cfg.debug
+        self.timeout = cfg.timeout
+        self.proc_name = cfg.proc_name
+        
+        try:
+            self.worker_class = cfg.worker_class
+        except ImportError, e:
+            self.log.error("%s" % e)
+            sys.exit(1)
         
         self._pidfile = None
+        self.worker_age = 0
+        self.reexec_pid = 0
         self.master_name = "Master"
-        self.proc_name = self.conf['proc_name']
-        
+ 
         # get current path, try to use PWD env first
         try:
             a = os.stat(os.environ('PWD'))
@@ -87,8 +93,8 @@ class Arbiter(object):
         """
         self.pid = os.getpid()
         self.init_signals()
-        self.LISTENER = create_socket(self.conf)
-        self.pidfile = self.opts.get("pidfile")
+        self.LISTENER = create_socket(self.cfg)
+        self.pidfile = self.cfg.pidfile
         self.log.info("Arbiter booted")
         self.log.info("Listening at: %s" % self.LISTENER)
         
@@ -292,7 +298,7 @@ class Arbiter(object):
             
         os.environ['GUNICORN_FD'] = str(self.LISTENER.fileno())
         os.chdir(self.START_CTX['cwd'])
-        self.conf.before_exec(self)
+        self.cfg.before_exec(self)
         os.execlp(self.START_CTX[0], *self.START_CTX['argv'])
 
     def murder_workers(self):
@@ -345,9 +351,6 @@ class Arbiter(object):
                     pid, age = wpid, worker.age
             self.kill_worker(pid, signal.SIGQUIT)
             
-    def init_worker(self, worker_age, pid, listener, app, timeout, conf):
-        return Worker(worker_age, pid, listener, app, timeout, conf)
-
     def spawn_workers(self):
         """\
         Spawn new workers as needed.
@@ -358,9 +361,9 @@ class Arbiter(object):
         
         for i in range(self.num_workers - len(self.WORKERS.keys())):
             self.worker_age += 1
-            worker = self.init_worker(self.worker_age, self.pid, self.LISTENER, 
-                            self.app, self.timeout/2.0, self.conf)
-            self.conf.before_fork(self, worker)
+            worker = self.worker_class(self.worker_age, self.pid, self.LISTENER,
+                                        self.app, self.timeout/2.0, self.cfg)
+            self.cfg.before_fork(self, worker)
             pid = os.fork()
             if pid != 0:
                 self.WORKERS[pid] = worker
@@ -372,8 +375,8 @@ class Arbiter(object):
                 util._setproctitle("worker [%s]" % self.proc_name)
                 self.log.debug("Booting worker: %s (age: %s)" % (
                                                 worker_pid, self.worker_age))
-                self.conf.after_fork(self, worker)
-                worker.run()
+                self.cfg.after_fork(self, worker)
+                worker.init_process()
                 sys.exit(0)
             except SystemExit:
                 raise

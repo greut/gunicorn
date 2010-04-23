@@ -3,9 +3,12 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
+import errno
 import logging
 import os
 import re
+import socket
+
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -16,7 +19,7 @@ from urllib import unquote
 
 from gunicorn import __version__
 from gunicorn.http.parser import Parser
-from gunicorn.http.response import Response
+from gunicorn.http.response import Response, KeepAliveResponse
 from gunicorn.http.tee import TeeInput
 from gunicorn.util import CHUNK_SIZE
 
@@ -168,3 +171,15 @@ class Request(object):
 
         self.response = self.RESPONSE_CLASS(self, status, headers)
         return self.response.write
+
+class KeepAliveRequest(Request):
+
+    RESPONSE_CLASS = KeepAliveResponse
+
+    def read(self):
+        try:
+            return super(KeepAliveRequest, self).read()
+        except socket.error, e:
+            if e[0] == errno.ECONNRESET:
+                return
+            raise

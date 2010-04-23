@@ -8,16 +8,15 @@
 
 import collections
 import errno
-from gunicorn.async.base import ALREADY_HANDLED
+from gunicorn.workers.async import ALREADY_HANDLED
 from eventlet import pools
 import socket
 import eventlet
 from eventlet.common import get_errno
 
 class WebSocketWSGI(object):
-    def __init__(self, handler, origin):
+    def __init__(self, handler):
         self.handler = handler
-        self.origin = origin
     
     def verify_client(self, ws):
         pass
@@ -28,7 +27,7 @@ class WebSocketWSGI(object):
             # need to check a few more things here for true compliance
             start_response('400 Bad Request', [('Connection','close')])
             return []
-                    
+   
         sock = environ['wsgi.input'].get_socket()
         ws = WebSocket(sock, 
             environ.get('HTTP_ORIGIN'),
@@ -40,7 +39,7 @@ class WebSocketWSGI(object):
                    "Connection: Upgrade\r\n"
                    "WebSocket-Origin: %s\r\n"
                    "WebSocket-Location: ws://%s%s\r\n\r\n" % (
-                        self.origin, 
+                        environ.get('HTTP_ORIGIN'), 
                         environ.get('HTTP_HOST'), 
                         ws.path))                                       
         sock.sendall(handshake_reply)
@@ -132,7 +131,7 @@ def handle(ws):
             ws.send("0 %s %s\n" % (i, random.random()))
             eventlet.sleep(0.1)
                             
-wsapp = WebSocketWSGI(handle, 'http://localhost:8000')
+wsapp = WebSocketWSGI(handle)
 def app(environ, start_response):
     """ This resolves to the web page or the websocket depending on
     the path."""
@@ -140,6 +139,7 @@ def app(environ, start_response):
         data = open(os.path.join(
                      os.path.dirname(__file__), 
                      'websocket.html')).read()
+        data = data % environ
         start_response('200 OK', [('Content-Type', 'text/html'),
                                  ('Content-Length', len(data))])
         return [data]
