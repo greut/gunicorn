@@ -56,7 +56,7 @@ class AsyncWorker(Worker):
             return False
         try:
             environ = req.read()
-            if not environ or not req.parser.headers:
+            if not environ:
                 return False
             respiter = self.app(environ, req.start_response)
             if respiter == ALREADY_HANDLED:
@@ -66,7 +66,7 @@ class AsyncWorker(Worker):
             req.response.close()
             if hasattr(respiter, "close"):
                 respiter.close()
-            if req.parser.should_close:
+            if req.req.should_close():
                 return False
         except Exception, e:
             #Only send back traceback in HTTP in debug mode.
