@@ -26,7 +26,7 @@ class EventletWorker(AsyncWorker):
             raise RuntimeError("You need eventlet >= 0.9.7")
         eventlet.monkey_patch(all=False, socket=True, select=True)
         
-    def timeout(self):
+    def timeout_ctx(self):
         return eventlet.Timeout(self.cfg.keepalive, False)
         
     def run(self):
