@@ -7,7 +7,7 @@ import errno
 import socket
 import traceback
 
-from gunicorn import http
+from gunicorn import wsgi
 from gunicorn.http.tee import UnexpectedEOF
 from gunicorn import util
 from gunicorn.workers.base import Worker
@@ -21,12 +21,13 @@ class AsyncWorker(Worker):
         self.worker_connections = self.cfg.worker_connections
     
     def keepalive_request(self, client, addr):
-        return http.KeepAliveRequest(client, addr, self.address, 
+        return wsgi.KeepAliveRequest(client, addr, self.address, 
             self.cfg)
 
     def handle(self, client, addr):
         try:
-            while self.handle_request(client, addr):
+            req = self.keepalive_request(client, addr)
+            while self.handle_request(req):
                 pass
         except socket.error, e:
             if e[0] not in (errno.EPIPE, errno.ECONNRESET):
@@ -50,8 +51,7 @@ class AsyncWorker(Worker):
         finally:
             util.close(client)
 
-    def handle_request(self, client, addr):
-        req = self.keepalive_request(client, addr)
+    def handle_request(self, req):
         if not req:
             return False
         try:

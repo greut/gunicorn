@@ -10,8 +10,7 @@ import select
 import socket
 import traceback
 
-from gunicorn import http, util
-from gunicorn.http.tee import UnexpectedEOF
+from gunicorn import wsgi, util
 from gunicorn.workers.base import Worker
 
 class SyncWorker(Worker):
@@ -75,8 +74,7 @@ class SyncWorker(Worker):
                 self.log.exception("Error processing request.")
             else:
                 self.log.warn("Ignoring EPIPE")
-        except UnexpectedEOF:
-            self.log.exception("Client closed the connection unexpectedly.")
+
         except Exception, e:
             self.log.exception("Error processing request.")
             try:            
@@ -89,7 +87,7 @@ class SyncWorker(Worker):
             util.close(client)
 
     def handle_request(self, client, addr):
-        req = http.Request(client, addr, self.address, self.cfg)
+        req = wsgi.Request(client, addr, self.address, self.cfg)
         try:
             environ = req.read()
             if not environ:

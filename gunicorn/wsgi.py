@@ -20,16 +20,79 @@ from urllib import unquote
 from simplehttp import RequestParser
 
 from gunicorn import __version__
-from gunicorn.http.parser import Parser
-from gunicorn.http.response import Response, KeepAliveResponse
-from gunicorn.http.tee import TeeInput
-from gunicorn.util import CHUNK_SIZE
+from gunicorn.util import CHUNK_SIZE, http_date, write, write_chunk, is_hoppish
 
 NORMALIZE_SPACE = re.compile(r'(?:\r\n)?[ \t]+')
 
 class RequestError(Exception):
     pass
-        
+
+class Response(object):
+    
+    def __init__(self, req, status, headers):
+        self.req = req
+        self.version = req.SERVER_VERSION
+        self.status = status
+        self.chunked = False
+        self.headers = []
+        self.headers_sent = False
+
+        for name, value in headers:
+            assert isinstance(name, basestring), "%r is not a string" % name
+            if is_hoppish(name):
+                lname = name.lower().strip()
+                if lname == "transfer-encoding":
+                    if value.lower().strip() == "chunked":
+                        self.chunked = True
+                elif lname == "connection":
+                    # handle websocket
+                    if value.lower().strip() != "upgrade":
+                        continue
+                else:
+                    # ignore hopbyhop headers
+                    continue
+            self.headers.append((name.strip(), str(value).strip()))
+
+    def default_headers(self):
+        return [
+            "HTTP/1.1 %s\r\n" % self.status,
+            "Server: %s\r\n" % self.version,
+            "Date: %s\r\n" % http_date(),
+            "Connection: close\r\n"
+        ]
+
+    def send_headers(self):
+        if self.headers_sent:
+            return
+        tosend = self.default_headers()
+        tosend.extend(["%s: %s\r\n" % (n, v) for n, v in self.headers])
+        write(self.req.socket, "%s\r\n" % "".join(tosend))
+        self.headers_sent = True
+
+    def write(self, arg):
+        self.send_headers()
+        assert isinstance(arg, basestring), "%r is not a string." % arg
+        write(self.req.socket, arg, self.chunked)
+
+    def close(self):
+        if not self.headers_sent:
+            self.send_headers()
+        if self.chunked:
+            write_chunk(self.req.socket, "")
+
+class KeepAliveResponse(Response):
+
+    def default_headers(self):
+        connection = "keep-alive"
+        if self.req.req.should_close():
+            connection = "close"
+
+        return [
+            "HTTP/1.1 %s\r\n" % self.status,
+            "Server: %s\r\n" % self.version,
+            "Date: %s\r\n" % http_date(),
+            "Connection: %s\r\n" % connection
+        ]        
 class Request(object):
 
     RESPONSE_CLASS = Response
@@ -175,6 +238,7 @@ class Request(object):
         self.response = self.RESPONSE_CLASS(self, status, headers)
         return self.response.write
 
+                   
 class KeepAliveRequest(Request):
 
     RESPONSE_CLASS = KeepAliveResponse
@@ -186,3 +250,4 @@ class KeepAliveRequest(Request):
             if e[0] == errno.ECONNRESET:
                 return
             raise
+
