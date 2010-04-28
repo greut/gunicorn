@@ -7,8 +7,9 @@ import errno
 import socket
 import traceback
 
+from simplehttp import RequestParser
+
 from gunicorn import wsgi
-from gunicorn.http.tee import UnexpectedEOF
 from gunicorn import util
 from gunicorn.workers.base import Worker
 
@@ -20,14 +21,21 @@ class AsyncWorker(Worker):
         Worker.__init__(self, *args, **kwargs)
         self.worker_connections = self.cfg.worker_connections
     
-    def keepalive_request(self, client, addr):
-        return wsgi.KeepAliveRequest(client, addr, self.address, 
-            self.cfg)
+    def timeout_ctx(self):
+        raise NotImplementedError
 
     def handle(self, client, addr):
         try:
-            req = self.keepalive_request(client, addr)
-            while self.handle_request(req):
+            try:
+                parser = RequestParser(client)                       
+                while True:
+                    req = None
+                    with self.timeout_ctx():
+                        req = parser.next()
+                    if not req:
+                        break
+                    self.handle_request(req, client, addr)
+            except StopIteration:
                 pass
         except socket.error, e:
             if e[0] not in (errno.EPIPE, errno.ECONNRESET):
@@ -37,8 +45,6 @@ class AsyncWorker(Worker):
                     self.log.warn("Ignoring connection reset")
                 else:
                     self.log.warn("Ignoring EPIPE")
-        except UnexpectedEOF:
-            self.log.exception("Client closed the connection unexpectedly.")
         except Exception, e:
             self.log.exception("Error processing request.")
             try:            
@@ -51,23 +57,23 @@ class AsyncWorker(Worker):
         finally:
             util.close(client)
 
-    def handle_request(self, req):
-        if not req:
-            return False
+    def handle_request(self, req, client, addr):
         try:
-            environ = req.read()
+            request = wsgi.KeepAliveRequest(req, client, addr, 
+                                        self.address, self.cfg)
+            environ = request.read()
             if not environ:
-                return False
-            respiter = self.app(environ, req.start_response)
+                raise StopIteration
+            respiter = self.app(environ, request.start_response)
             if respiter == ALREADY_HANDLED:
                 return False
             for item in respiter:
-                req.response.write(item)
-            req.response.close()
+                request.response.write(item)
+            request.response.close()
             if hasattr(respiter, "close"):
                 respiter.close()
-            if req.req.should_close():
-                return False
+            if request.req.should_close():
+                raise StopIteration
         except Exception, e:
             #Only send back traceback in HTTP in debug mode.
             if not self.debug:

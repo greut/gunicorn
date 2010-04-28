@@ -17,8 +17,6 @@ except ImportError:
 import sys
 from urllib import unquote
 
-from simplehttp import RequestParser
-
 from gunicorn import __version__
 from gunicorn.util import CHUNK_SIZE, http_date, write, write_chunk, is_hoppish
 
@@ -110,34 +108,29 @@ class Request(object):
         "SERVER_SOFTWARE": "gunicorn/%s" % __version__
     }
 
-    def __init__(self, socket, client_address, server_address, conf):
+    def __init__(self, req, socket, client_address, server_address, conf):
         self.debug = conf['debug']
         self.conf = conf
         self.socket = socket
-    
+        self.req = req
         self.client_address = client_address
         self.server_address = server_address
+        
         self.response_status = None
         self.response_headers = []
         self._version = 11
-        self.parser = RequestParser(self.socket)
         self.log = logging.getLogger(__name__)
         self.response = None
         self.response_chunked = False
         self.headers_sent = False
-        self.req = None
+        
 
     def read(self):
         environ = {}
         headers = []
-        
-        ended = False
-        req = None
-        
-        self.req = req = self.parser.next()
-        
+
         ##self.log.debug("%s", self.parser.status)
-        self.log.debug("Headers:\n%s" % req.headers)
+        self.log.debug("Headers:\n%s" % self.req.headers)
         
         # authors should be aware that REMOTE_HOST and REMOTE_ADDR
         # may not qualify the remote addr:
@@ -148,7 +141,7 @@ class Request(object):
         script_name = os.environ.get("SCRIPT_NAME", "")
         content_type = ""
         content_length = ""
-        for hdr_name, hdr_value in req.headers:
+        for hdr_name, hdr_value in self.req.headers:
             name = hdr_name.lower()
             if name == "expect":
                 # handle expect
@@ -190,14 +183,13 @@ class Request(object):
             if len(server_address) == 1:
                 server_address.append('')
 
-        path_info = req.path
+        path_info = self.req.path
         if script_name:
             path_info = path_info.split(script_name, 1)[-1]
 
-
         environ = {
             "wsgi.url_scheme": 'http',
-            "wsgi.input": req.body,
+            "wsgi.input": self.req.body,
             "wsgi.errors": sys.stderr,
             "wsgi.version": (1, 0),
             "wsgi.multithread": False,
@@ -205,20 +197,20 @@ class Request(object):
             "wsgi.run_once": False,
             "SCRIPT_NAME": script_name,
             "SERVER_SOFTWARE": self.SERVER_VERSION,
-            "REQUEST_METHOD": req.method,
+            "REQUEST_METHOD": self.req.method,
             "PATH_INFO": unquote(path_info),
-            "QUERY_STRING": req.query,
-            "RAW_URI": req.path,
+            "QUERY_STRING": self.req.query,
+            "RAW_URI": self.req.path,
             "CONTENT_TYPE": content_type,
             "CONTENT_LENGTH": content_length,
             "REMOTE_ADDR": remote_addr[0],
             "REMOTE_PORT": str(remote_addr[1]),
             "SERVER_NAME": server_address[0],
             "SERVER_PORT": str(server_address[1]),
-            "SERVER_PROTOCOL": req.version
+            "SERVER_PROTOCOL": self.req.version
         }
         
-        for key, value in req.headers:
+        for key, value in self.req.headers:
             key = 'HTTP_' + key.upper().replace('-', '_')
             if key not in ('HTTP_CONTENT_TYPE', 'HTTP_CONTENT_LENGTH'):
                 environ[key] = value

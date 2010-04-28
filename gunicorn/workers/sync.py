@@ -10,6 +10,8 @@ import select
 import socket
 import traceback
 
+from simplehttp import RequestParser
+
 from gunicorn import wsgi, util
 from gunicorn.workers.base import Worker
 
@@ -68,7 +70,9 @@ class SyncWorker(Worker):
         
     def handle(self, client, addr):
         try:
-            self.handle_request(client, addr)
+            parser = RequestParser(client)
+            req = parser.next()
+            self.handle_request(req, client, addr)
         except socket.error, e:
             if e[0] != errno.EPIPE:
                 self.log.exception("Error processing request.")
@@ -79,23 +83,23 @@ class SyncWorker(Worker):
             self.log.exception("Error processing request.")
             try:            
                 # Last ditch attempt to notify the client of an error.
-                mesg = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
+                mesg = "HTTP/1.1 500 Internal Server Error\r\n\r\n"
                 util.write_nonblock(client, mesg)
             except:
                 pass
         finally:    
             util.close(client)
 
-    def handle_request(self, client, addr):
-        req = wsgi.Request(client, addr, self.address, self.cfg)
+    def handle_request(self, req, client, addr):
+        request = wsgi.Request(req, client, addr, self.address, self.cfg)
         try:
-            environ = req.read()
+            environ = request.read()
             if not environ:
                 return
-            respiter = self.app(environ, req.start_response)
+            respiter = self.app(environ, request.start_response)
             for item in respiter:
-                req.response.write(item)
-            req.response.close()
+                request.response.write(item)
+            request.response.close()
             if hasattr(respiter, "close"):
                 respiter.close()
         except socket.error:
