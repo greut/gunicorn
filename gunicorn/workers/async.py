@@ -36,7 +36,7 @@ class AsyncWorker(Worker):
                         break
                     self.handle_request(req, client, addr)
             except StopIteration:
-                pass
+                return
         except socket.error, e:
             if e[0] not in (errno.EPIPE, errno.ECONNRESET):
                 self.log.exception("Error processing request.")
