@@ -44,8 +44,6 @@ class Arbiter(object):
         if name[:3] == "SIG" and name[3] != "_"
     )
     
-    pidfile = Pidfile()
-
     def __init__(self, cfg, app):
         self.cfg = cfg
         self.app = app
@@ -64,7 +62,7 @@ class Arbiter(object):
             self.log.error("%s" % e)
             sys.exit(1)
         
-        self._pidfile = None
+        self.pidfile = None
         self.worker_age = 0
         self.reexec_pid = 0
         self.master_name = "Master"
@@ -94,7 +92,8 @@ class Arbiter(object):
         self.pid = os.getpid()
         self.init_signals()
         self.LISTENER = create_socket(self.cfg)
-        self.pidfile = self.cfg.pidfile
+        self.pidfile = Pidfile(self.cfg.pidfile)
+        self.pidfile.create(self.pid)
         self.log.info("Arbiter booted")
         self.log.info("Listening at: %s" % self.LISTENER)
         
@@ -154,14 +153,14 @@ class Arbiter(object):
                 self.log.info("Unhandled exception in main loop:\n%s" %  
                             traceback.format_exc())
                 self.stop(False)
-                if self.pidfile:
-                    del self.pidfile
+                if self.pidfile is not None:
+                    self.pidfile.unlink()
                 sys.exit(-1)
 
         self.stop()
         self.log.info("Shutting down: %s" % self.master_name)
-        if self.pidfile:
-            del self.pidfile
+        if self.pidfile is not None:
+            self.pidfile.unlink()
         sys.exit(0)
         
     def handle_chld(self, sig, frame):
@@ -287,9 +286,8 @@ class Arbiter(object):
         """\
         Relaunch the master and workers.
         """
-        if self.pidfile:
-            old_pidfile = "%s.oldbin" % self.pidfile
-            self.pidfile = old_pidfile            
+        if self.pidfile is not None:
+            self.pidfile.rename("%s.oldbin" % self.pidfile.path)         
         
         self.reexec_pid = os.fork()
         if self.reexec_pid != 0:
