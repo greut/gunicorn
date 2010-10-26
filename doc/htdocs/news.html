@@ -4,53 +4,109 @@
     <meta charset="utf-8" />
     <title>Green Unicorn - News</title>
     <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
-  
-    <!--[if IE]>
-      <script>
-        document.createElement('section');
-        document.createElement('article');
-        document.createElement('aside');
-        document.createElement('footer');
-        document.createElement('header');
-        document.createElement('nav');
-        document.createElement('time');
-      </script>
-
-    <![endif]-->
-
-	<link rel="stylesheet" href="css/style.css" type="text/css" media="screen">
+    <link rel="stylesheet" href="css/style.css" type="text/css" media="screen" />
   </head>
   <body>
-	<div class="container"> 
-		<div id="header"> 
-	      
-	        <h1 class="logo"><a href="http://gunicorn.org">gunicorn</a></h1>
-
-	        <div id="links"> 
-	          Get the source via
-	          <a href="http://github.com/benoitc/gunicorn">git</a>, then
-	          <a href="http://github.com/benoitc/gunicorn/issues">send feedback</a> 
-	        </div> 
-	  </div>
-		
-    	
-  
-  <div id="menu">
-  <ul id="actions">
-    <li><a href="installation.html">Installation</a></li>
-    <li><a href="usage.html">Usage</a></li>
-    <li><a href="deployment.html">Deployment</a></li>
-    <li><a href="configuration.html">Configuration</a></li>
-    <li><a href="tuning.html">Tuning</a></li>
-    <li><a href="faq.html">FAQ</a></li>
-    <li><a href="news.html">News</a></li>
-  </ul>
-</div>
-
-  <div class="document" id="news">
-<h1 class="title">News</h1>
+    <div id="container" class="twocolumn">
+      <div id="menu">
+        <div class="logo">
+          <a href="./">
+            <img src="images/gunicorn.png" alt="Gunicorn - Green Unicorn" />
+          </a>
+        </div>
+        <ul id="actions">
+          <li><a href="install.html">Install</a></li>
+          <li><a href="run.html">Run</a></li>
+          <li><a href="configure.html">Configure</a></li>
+          <li><a href="deploy.html">Deploy</a></li>
+          <li><a href="design.html">Design</a></li>
+          <li><a href="faq.html">FAQ</a></li>
+          <li><a href="news.html">News</a></li>
+          <li><a href="http://github.com/benoitc/gunicorn/">Code</a></li>
+          <li><a href="http://github.com/benoitc/gunicorn/issues">Issues</a></li>
+        </ul>
+      </div>
+      <div id="content">
+      <div class="document">
 <div class="section" id="id1">
-<h1>0.8.1 / 2010-04-29</h1>
+<h2><a class="toc-backref" href="#contents">0.11.1 / 2010-09-02</a></h2>
+<ul class="simple">
+<li>Implement max-requests feature to prevent memory leaks.</li>
+<li>Added 'worker_exit' server hook.</li>
+<li>Reseed the random number generator after fork().</li>
+<li>Improve Eventlet worker.</li>
+<li>Fix Django command <cite>run_gunicorn</cite>.</li>
+<li>Fix the default proc name internal setting.</li>
+<li>Workaround to prevent Gevent worker to segfault on MacOSX.</li>
+</ul>
+</div>
+<div class="section" id="id2">
+<h2><a class="toc-backref" href="#contents">0.11.0 / 2010-08-12</a></h2>
+<ul class="simple">
+<li>Improve dramatically performances of Gevent and Eventlet workers</li>
+<li>Optimize HTTP parsing</li>
+<li>Drop Server and Date headers in start_response when provided.</li>
+<li>Fix latency issue in async workers</li>
+</ul>
+</div>
+<div class="section" id="id3">
+<h2><a class="toc-backref" href="#contents">0.10.1 / 2010-08-06</a></h2>
+<ul class="simple">
+<li>Improve gevent's workers. Add &quot;egg:gunicorn#gevent_wsgi&quot; worker using
+<a class="reference external" href="http://www.gevent.org/gevent.wsgi.html">gevent.wsgi</a> and
+&quot;egg:gunicorn#gevent_pywsgi&quot; worker using <a class="reference external" href="http://www.gevent.org/gevent.pywsgi.html">gevent.pywsgi</a> .
+<strong>&quot;egg:gunicorn#gevent&quot;</strong> using our own HTTP parser is still here and
+is <strong>recommended</strong> for normal uses. Use the &quot;gevent.wsgi&quot; parser if you
+need really fast connections and don't need streaming, keepalive or ssl.</li>
+<li>Add pre/post request hooks</li>
+<li>Exit more quietly</li>
+<li>Fix gevent dns issue</li>
+</ul>
+</div>
+<div class="section" id="id4">
+<h2><a class="toc-backref" href="#contents">0.10.0 / 2010-07-08</a></h2>
+<ul class="simple">
+<li>New HTTP parser.</li>
+<li>New HUP behaviour. Re-reads the configuration and then reloads all
+worker processes without changing the master process id. Helpful for
+code reloading and monitoring applications like supervisord and runit.</li>
+<li>Added a preload configuration parameter. By default, application code
+is now loaded after a worker forks. This couple with the new HUP
+handling can be used for dev servers to do hot code reloading. Using
+the preload flag can help a bit in small memory VM's.</li>
+<li>Allow people to pass command line arguments to WSGI applications. See:
+<a class="reference external" href="http://github.com/benoitc/gunicorn/raw/master/examples/alt_spec.py">examples/alt_spec.py</a></li>
+<li>Added an example gevent reloader configuration:
+<a class="reference external" href="http://github.com/benoitc/gunicorn/blob/master/examples/example_gevent_reloader.py">examples/example_gevent_reloader.py</a>.</li>
+<li>New gevent worker &quot;egg:gunicorn#gevent2&quot;, working with gevent.wsgi.</li>
+<li>Internal refactoring and various bug fixes.</li>
+<li>New documentation website.</li>
+</ul>
+</div>
+<div class="section" id="id5">
+<h2><a class="toc-backref" href="#contents">0.9.1 / 2010-05-26</a></h2>
+<ul class="simple">
+<li>Support https via X-Forwarded-Protocol or X-Forwarded-Ssl headers</li>
+<li>Fix configuration</li>
+<li>Remove -d options which was used instead of -D for daemon.</li>
+<li>Fix umask in unix socket</li>
+</ul>
+</div>
+<div class="section" id="id6">
+<h2><a class="toc-backref" href="#contents">0.9.0 / 2010-05-24</a></h2>
+<ul class="simple">
+<li>Added <em>when_ready</em> hook. Called just after the server is started</li>
+<li>Added <em>preload</em> setting. Load application code before the worker processes
+are forked.</li>
+<li>Refactored Config</li>
+<li>Fix pidfile</li>
+<li>Fix QUIT/HUP in async workers</li>
+<li>Fix reexec</li>
+<li>Documentation improvements</li>
+</ul>
+</div>
+<div class="section" id="id7">
+<h2><a class="toc-backref" href="#contents">0.8.1 / 2010-04-29</a></h2>
 <ul class="simple">
 <li>Fix builtins import in config</li>
 <li>Fix installation with pip</li>
@@ -58,30 +114,30 @@
 <li>Delay application loading until after processing all configuration</li>
 </ul>
 </div>
-<div class="section" id="id2">
-<h1>0.8.0 / 2010-04-22</h1>
+<div class="section" id="id8">
+<h2><a class="toc-backref" href="#contents">0.8.0 / 2010-04-22</a></h2>
 <ul class="simple">
 <li>Refactored Worker management for better async support. Now use the -k option
 to set the type of request processing to use</li>
 <li>Added support for <a class="reference external" href="http://www.tornadoweb.org/">Tornado</a></li>
 </ul>
 </div>
-<div class="section" id="id3">
-<h1>0.7.2 / 2010-04-15</h1>
+<div class="section" id="id9">
+<h2><a class="toc-backref" href="#contents">0.7.2 / 2010-04-15</a></h2>
 <ul class="simple">
 <li>Added --spew option to help debugging (installs a system trace hook)</li>
 <li>Some fixes in async arbiters</li>
 <li>Fix a bug in start_response on error</li>
 </ul>
 </div>
-<div class="section" id="id4">
-<h1>0.7.1 / 2010-04-01</h1>
+<div class="section" id="id10">
+<h2><a class="toc-backref" href="#contents">0.7.1 / 2010-04-01</a></h2>
 <ul class="simple">
 <li>Fix bug when responses have no body.</li>
 </ul>
 </div>
-<div class="section" id="id5">
-<h1>0.7.0 / 2010-03-26</h1>
+<div class="section" id="id11">
+<h2><a class="toc-backref" href="#contents">0.7.0 / 2010-03-26</a></h2>
 <ul class="simple">
 <li>Added support for <a class="reference external" href="http://eventlet.net">Eventlet</a> and <a class="reference external" href="http://gevent.org">Gevent</a> based workers.</li>
 <li>Added <a class="reference external" href="http://dev.w3.org/html5/websockets/">Websockets</a> support</li>
@@ -90,29 +146,29 @@ to set the type of request processing to use</li>
 <li>Fix <a class="reference external" href="http://www.python.org/dev/peps/pep-0333/">PEP 333</a> compliance for the write callable.</li>
 </ul>
 </div>
-<div class="section" id="id6">
-<h1>0.6.5 / 2010-03-11</h1>
+<div class="section" id="id12">
+<h2><a class="toc-backref" href="#contents">0.6.5 / 2010-03-11</a></h2>
 <ul class="simple">
 <li>Fix pidfile handling</li>
 <li>Fix Exception Error</li>
 </ul>
 </div>
-<div class="section" id="id7">
-<h1>0.6.4 / 2010-03-08</h1>
+<div class="section" id="id13">
+<h2><a class="toc-backref" href="#contents">0.6.4 / 2010-03-08</a></h2>
 <ul class="simple">
 <li>Use cStringIO for performance when possible.</li>
 <li>Fix worker freeze when a remote connection closes unexpectedly.</li>
 </ul>
 </div>
-<div class="section" id="id8">
-<h1>0.6.3 / 2010-03-07</h1>
+<div class="section" id="id14">
+<h2><a class="toc-backref" href="#contents">0.6.3 / 2010-03-07</a></h2>
 <ul class="simple">
 <li>Make HTTP parsing faster.</li>
 <li>Various bug fixes</li>
 </ul>
 </div>
-<div class="section" id="id9">
-<h1>0.6.2 / 2010-03-01</h1>
+<div class="section" id="id15">
+<h2><a class="toc-backref" href="#contents">0.6.2 / 2010-03-01</a></h2>
 <ul class="simple">
 <li>Added support for chunked response.</li>
 <li>Added proc_name option to the config file.</li>
@@ -122,31 +178,31 @@ temporary data.</li>
 <li>Workers are now murdered by age (the oldest is killed first).</li>
 </ul>
 </div>
-<div class="section" id="id10">
-<h1>0.6.1 / 2010-02-24</h1>
+<div class="section" id="id16">
+<h2><a class="toc-backref" href="#contents">0.6.1 / 2010-02-24</a></h2>
 <ul class="simple">
 <li>Added gunicorn config file support for Django admin command</li>
 <li>Fix gunicorn config file. -c was broken.</li>
 <li>Removed TTIN/TTOU from workers which blocked other signals.</li>
 </ul>
 </div>
-<div class="section" id="id11">
-<h1>0.6 / 2010-02-22</h1>
+<div class="section" id="id17">
+<h2><a class="toc-backref" href="#contents">0.6 / 2010-02-22</a></h2>
 <ul class="simple">
 <li>Added setproctitle support</li>
 <li>Change privilege switch behavior. We now work like NGINX, master keeps the
 permissions, new uid/gid permissions are only set for workers.</li>
 </ul>
 </div>
-<div class="section" id="id12">
-<h1>0.5.1 / 2010-02-22</h1>
+<div class="section" id="id18">
+<h2><a class="toc-backref" href="#contents">0.5.1 / 2010-02-22</a></h2>
 <ul class="simple">
 <li>Fix umask</li>
 <li>Added Debian packaging</li>
 </ul>
 </div>
-<div class="section" id="id13">
-<h1>0.5 / 2010-02-20</h1>
+<div class="section" id="id19">
+<h2><a class="toc-backref" href="#contents">0.5 / 2010-02-20</a></h2>
 <ul class="simple">
 <li>Added <a class="reference external" href="configuration.html">configuration file</a> handler.</li>
 <li>Added support for pre/post fork hooks</li>
@@ -162,13 +218,37 @@ permissions, new uid/gid permissions are only set for workers.</li>
 </ul>
 </div>
 </div>
-
-  
-
-    <div id="footer">
-      <p>This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/3.0/">Creative Commons Attribution 3.0 Unported License</a>.</p>
-      <p>Hosted on <a href="http://github.com/">Github</a></p>
+      </div>
+      <div id="toc">
+      <div class="contents topic" id="contents">
+<p class="topic-title first">Contents</p>
+<ul class="simple">
+<li><a class="reference internal" href="#id1" id="id20">0.11.1 / 2010-09-02</a></li>
+<li><a class="reference internal" href="#id2" id="id21">0.11.0 / 2010-08-12</a></li>
+<li><a class="reference internal" href="#id3" id="id22">0.10.1 / 2010-08-06</a></li>
+<li><a class="reference internal" href="#id4" id="id23">0.10.0 / 2010-07-08</a></li>
+<li><a class="reference internal" href="#id5" id="id24">0.9.1 / 2010-05-26</a></li>
+<li><a class="reference internal" href="#id6" id="id25">0.9.0 / 2010-05-24</a></li>
+<li><a class="reference internal" href="#id7" id="id26">0.8.1 / 2010-04-29</a></li>
+<li><a class="reference internal" href="#id8" id="id27">0.8.0 / 2010-04-22</a></li>
+<li><a class="reference internal" href="#id9" id="id28">0.7.2 / 2010-04-15</a></li>
+<li><a class="reference internal" href="#id10" id="id29">0.7.1 / 2010-04-01</a></li>
+<li><a class="reference internal" href="#id11" id="id30">0.7.0 / 2010-03-26</a></li>
+<li><a class="reference internal" href="#id12" id="id31">0.6.5 / 2010-03-11</a></li>
+<li><a class="reference internal" href="#id13" id="id32">0.6.4 / 2010-03-08</a></li>
+<li><a class="reference internal" href="#id14" id="id33">0.6.3 / 2010-03-07</a></li>
+<li><a class="reference internal" href="#id15" id="id34">0.6.2 / 2010-03-01</a></li>
+<li><a class="reference internal" href="#id16" id="id35">0.6.1 / 2010-02-24</a></li>
+<li><a class="reference internal" href="#id17" id="id36">0.6 / 2010-02-22</a></li>
+<li><a class="reference internal" href="#id18" id="id37">0.5.1 / 2010-02-22</a></li>
+<li><a class="reference internal" href="#id19" id="id38">0.5 / 2010-02-20</a></li>
+</ul>
+</div>
+      </div>
+      <div id="footer">
+        <p>Site Content License <a rel="license" href="http://creativecommons.org/licenses/by/3.0/">Creative Commons Attribution 3.0 Unported License</a>.</p>
+        <p>Hosted on <a href="http://github.com/">GitHub</a></p>
+      </div>
     </div>
-	</div>
   </body>
 </html>

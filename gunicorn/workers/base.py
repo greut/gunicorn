@@ -6,6 +6,7 @@
 
 import logging
 import os
+import random
 import signal
 import sys
 import tempfile
@@ -33,8 +34,10 @@ class Worker(object):
         self.app = app
         self.timeout = timeout
         self.cfg = cfg
+        self.booted = False
 
         self.nr = 0
+        self.max_requests = cfg.max_requests or sys.maxint
         self.alive = True
         self.spinner = 0
         self.log = logging.getLogger(__name__)
@@ -81,6 +84,9 @@ class Worker(object):
         """
         util.set_owner_process(self.cfg.uid, self.cfg.gid)
 
+        # Reseed the random number generator
+        random.seed()
+
         # For waking ourselves up
         self.PIPE = os.pipe()
         map(util.set_non_blocking, self.PIPE)
@@ -91,7 +97,10 @@ class Worker(object):
         util.close_on_exec(self.fd)
         self.init_signals()
         
+        self.wsgi = self.app.wsgi()
+        
         # Enter main run loop
+        self.booted = True
         self.run()
 
     def init_signals(self):

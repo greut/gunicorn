@@ -36,12 +36,19 @@ class BaseSocket(object):
         if not bound:
             self.bind(sock)
         sock.setblocking(0)
-        sock.listen(self.conf['backlog'])
-        
+        sock.listen(self.conf.backlog)
         return sock
         
     def bind(self, sock):
         sock.bind(self.address)
+        
+    def close(self):
+        try:
+            self.sock.close()
+        except socket.error, e:
+            log.info("Error while closing socket %s" % str(e))
+        time.sleep(0.3)
+        del self.sock
 
 class TCPSocket(BaseSocket):
     
@@ -51,10 +58,6 @@ class TCPSocket(BaseSocket):
         return "http://%s:%d" % self.sock.getsockname()
     
     def set_options(self, sock, bound=False):
-        if hasattr(socket, "TCP_CORK"):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 1)
-        elif hasattr(socket, "TCP_NOPUSH"):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NOPUSH, 1)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         return super(TCPSocket, self).set_options(sock, bound=bound)
 
@@ -74,10 +77,14 @@ class UnixSocket(BaseSocket):
         return "unix:%s" % self.address
         
     def bind(self, sock):
-        old_umask = os.umask(self.conf['umask'])
+        old_umask = os.umask(self.conf.umask)
         sock.bind(self.address)
         util.chown(self.address, self.conf.uid, self.conf.gid)
         os.umask(old_umask)
+        
+    def close(self):
+        super(UnixSocket, self).close()
+        os.unlink(self.address)
 
 def create_socket(conf):
     """

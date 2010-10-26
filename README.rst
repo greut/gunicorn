@@ -1,10 +1,10 @@
 About
 -----
 
-Gunicorn 'Green Unicorn' is a WSGI HTTP Server for UNIX. It's a pre-fork
-worker model ported from Ruby's Unicorn_ project. The Gunicorn server is
-broadly compatible with various web frameworks, simply implemented, light
-on server resource usage, and fairly speedy.
+Gunicorn 'Green Unicorn' is a Python WSGI HTTP Server for UNIX. It's a pre-fork
+worker model ported from Ruby's Unicorn_ project. The Gunicorn server is broadly
+compatible with various web frameworks, simply implemented, light on server
+resource usage, and fairly speedy.
 
 Feel free to join us in `#gunicorn`_ on freenode_.
 
@@ -31,7 +31,7 @@ To install eventlet::
     $ easy_install -U eventlet
 
 If you encounter errors when compiling the extensions for Eventlet_ or
-Gevent_ you most likely need to install a newer version of libev_.
+Gevent_ you most likely need to install a newer version of libev_ or libevent_.
 
 Basic Usage
 -----------
@@ -61,7 +61,7 @@ Commonly Used Arguments
 
     sync=gunicorn.workers.sync:SyncWorker
     eventlet=gunicorn.workers.geventlet:EventletWorker
-    gevent=gunicorn.workers.ggevent:GEventWorker
+    gevent=gunicorn.workers.ggevent:GeventWorker
     tornado
 
 There are various other parameters that affect user privileges, logging, etc.
@@ -156,6 +156,7 @@ details.
 .. _Gevent: http://gevent.org
 .. _FAQ: http://gunicorn.org/faq.html
 .. _libev: http://software.schmorp.de/pkg/libev.html
+.. _libevent: http://monkey.org/~provos/libevent
 .. _`production page`: http://gunicorn.org/deployment.html
 .. _`config file`: http://gunicorn.org/configuration.html
 .. _setproctitle: http://pypi.python.org/pypi/setproctitle/

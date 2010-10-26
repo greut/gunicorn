@@ -10,8 +10,25 @@ import os
 import pkg_resources
 import resource
 import socket
+import sys
 import textwrap
 import time
+
+try:#python 2.6, use subprocess
+    import subprocess
+    subprocess.Popen  # trigger ImportError early
+    closefds = os.name == 'posix'
+    
+    def popen3(cmd, mode='t', bufsize=0):
+        p = subprocess.Popen(cmd, shell=True, bufsize=bufsize,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+            close_fds=closefds)
+        p.wait()
+        return (p.stdin, p.stdout, p.stderr)
+except ImportError:
+    subprocess = None
+    popen3 = os.popen3
+
 
 MAXFD = 1024
 if (hasattr(os, "devnull")):
@@ -30,9 +47,18 @@ monthname = [None,
              'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+# Server and Date aren't technically hop-by-hop
+# headers, but they are in the purview of the
+# origin server which the WSGI spec says we should
+# act like. So we drop them and add our own.
+#
+# In the future, concatenation server header values
+# might be better, but nothing else does it and
+# dropping them is easier.
 hop_headers = set("""
     connection keep-alive proxy-authenticate proxy-authorization
     te trailers transfer-encoding upgrade
+    server date
     """.split())
              
 try:
@@ -57,7 +83,13 @@ def load_worker_class(uri):
     else:
         components = uri.split('.')
         if len(components) == 1:
-            raise RuntimeError("arbiter uri invalid")
+            try:
+                if uri.startswith("#"):
+                    uri = uri[1:]
+                return pkg_resources.load_entry_point("gunicorn", 
+                            "gunicorn.workers", uri)
+            except ImportError: 
+                raise RuntimeError("arbiter uri invalid or not found")
         klass = components.pop(-1)
         mod = __import__('.'.join(components))
         for comp in components[1:]:
@@ -174,13 +206,9 @@ def import_app(module):
         module, obj = module, "application"
     else:
         module, obj = parts[0], parts[1]
-    mod = __import__(module)
-    parts = module.split(".")
-    for p in parts[1:]:
-        mod = getattr(mod, p, None)
-        if mod is None:
-            raise ImportError("Failed to import: %s" % module)
-    app = getattr(mod, obj, None)
+    __import__(module)
+    mod = sys.modules[module]
+    app = eval(obj, mod.__dict__)
     if app is None:
         raise ImportError("Failed to find application object: %r" % obj)
     if not callable(app):
@@ -209,3 +237,32 @@ def to_bytestring(s):
 
 def is_hoppish(header):
     return header.lower().strip() in hop_headers
+
+def daemonize():
+    """\
+    Standard daemonization of a process. Code is basd on the
+    ActiveState recipe at:
+        http://code.activestate.com/recipes/278731/
+    """
+    if not 'GUNICORN_FD' in os.environ:
+        if os.fork() == 0: 
+            os.setsid()
+            if os.fork() != 0:
+                os.umask(0) 
+            else:
+                os._exit(0)
+        else:
+            os._exit(0)
+        
+        maxfd = get_maxfd()
+
+        # Iterate through and close all file descriptors.
+        for fd in range(0, maxfd):
+            try:
+                os.close(fd)
+            except OSError:	# ERROR, fd wasn't open to begin with (ignored)
+                pass
+        
+        os.open(REDIRECT_TO, os.O_RDWR)
+        os.dup2(0, 1)
+        os.dup2(0, 2)

@@ -1,33 +1,80 @@
 template: doc.html
 title: FAQ
 
-FAQ
-===
+_TOC_TOP_
 
-How do I know which type of worker to use?
-  Test. Read the "Synchronous vs Asynchronous workers" section on the 
-  deployment_ page. Test some more.
+.. contents::
+    :backlinks: top
 
-What types of workers are there?
-  These can all be used with the ``-k`` option and specifying them
-  as ``egg:gunicorn#$(NAME)`` where ``$(NAME)`` is chosen from this list.
-  
-  * ``sync`` - The default synchronous worker
-  * ``eventlet`` - Asynchronous workers based on Greenlets
-  * ``gevent`` - Asynchronous workers based on Greenlets
-  * ``tornado`` - Asynchronous workers based on FriendFeed's Tornado server.
+_TOC_BOT_
 
-How might I test a proxy configuration?
-  Check out slowloris_ for a script that will generate significant slow
-  traffic. If your application remains responsive through out that test you
-  should be comfortable that all is well with your configuration.
+
+WSGI Bits
+=========
+
+How do I set SCRIPT_NAME?
+-------------------------
+
+By default ``SCRIPT_NAME`` is an empy string. The value could be set by
+setting ``SCRIPT_NAME`` in the environment or as an HTTP header.
+
+
+Server Stuff
+============
 
 How do I reload my application in Gunicorn?
-  You can gracefully reload by sending HUP signal to gunicorn::
+-------------------------------------------
+
+You can gracefully reload by sending HUP signal to gunicorn::
 
     $ kill -HUP masterpid
 
-How do I increase or decrease the number of running workers dynamically?
+How might I test a proxy configuration?
+---------------------------------------
+
+The Slowloris_ script is a great way to test that your proxy is correctly
+buffering responses for the synchronous workers.
+
+How can I name processes?
+-------------------------
+
+If you install the Python package setproctitle_ Gunicorn will set the process
+names to something a bit more meaningful. This will affect the output you see
+in tools like ``ps`` and ``top``. This helps for distinguishing the master
+process as well as between masters when running more than one app on a single
+machine. See the proc_name_ setting for more information.
+
+Gunicorn fails to start with upstart
+------------------------------------
+
+Make sure you run gunicorn with ``--daemon`` option.
+
+.. _slowloris: http://ha.ckers.org/slowloris/
+.. _setproctitle: http://pypi.python.org/pypi/setproctitle
+.. _proc_name: /configure.html#proc-name
+
+
+Worker Processes
+================
+
+How do I know which type of worker to use?
+------------------------------------------
+
+Read the design_ page for help on the various worker types.
+
+What types of workers are there?
+--------------------------------
+
+Check out the configuration docs for worker_class_
+
+How can I figure out the best number of worker processes?
+---------------------------------------------------------
+
+Here is our recommendation for tuning the `number of workers`_.
+
+How can I change the number of workers dynamically?
+---------------------------------------------------
+
     To increase the worker count by one::
 
         $ kill -TTIN $masterpid
@@ -36,21 +83,40 @@ How do I increase or decrease the number of running workers dynamically?
 
         $ kill -TTOU $masterpid
 
-How can I figure out the best number of worker processes?
-  Start gunicorn with an approximate number of worker processes. Then use the
-  TTIN and/or TTOU signals to adjust the number of workers under load.
+.. _design: /design.html
+.. _worker_class: /configure.html#worker-class
+.. _`number of workers`: /design.html#how-many-workers
 
-How do I set SCRIPT_NAME?
-    By default ``SCRIPT_NAME`` is an empy string. The value could be set by
-    setting ``SCRIPT_NAME`` in the environment or as an HTTP header.
+Kernel Parameters
+=================
 
-How can I name processes?
-    You need to install the Python package setproctitle_. Then you can specify
-    a base process name on the command line (``-n``) or in the configuration
-    file.
+When dealing with large numbers of concurrent connections there are a handful of
+kernel parameters that you might need to adjust. Generally these should only
+affect sites with a very large concurrent load. These parameters are not
+specific to Gunicorn, they would apply to any sort of network server you may be
+running.
 
-.. _deployment: http://gunicorn.org/deployment.html
-.. _slowloris: http://ha.ckers.org/slowloris/
-.. _setproctitle: http://pypi.python.org/pypi/setproctitle
-.. _Eventlet: http://eventlet.net
-.. _Gevent: http://gevent.org
+These commands are for Linux. Your particular OS may have slightly different
+parameters.
+
+How can I increase the maximum number of file descriptors?
+----------------------------------------------------------
+
+One of the first settings that usually needs to be bumped is the maximum number
+of open file descriptors for a given process. For the confused out there,
+remember that Unices treat sockets as files.
+
+::
+    
+    $ sudo ulimit -n 2048
+
+How can I increase the maximum socket backlog?
+----------------------------------------------
+
+Listening sockets have an associated queue of incoming connections that are
+waiting to be accepted. If you happen to have a stampede of clients that fill up
+this queue new connections will eventually start getting dropped.
+
+::
+
+    $ sudo sysctl -w net.core.somaxconn="2048"

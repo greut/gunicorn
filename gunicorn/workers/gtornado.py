@@ -15,25 +15,17 @@ from tornado.wsgi import WSGIContainer
 from gunicorn.workers.base import Worker
 from gunicorn import __version__ as gversion
 
-
-def patch_request_handler():
-    web = sys.modules.pop("tornado.web")
-
-    old_clear = web.RequestHandler.clear
-
-    def clear(self):
-        old_clear(self)
-        self._headers["Server"] += " (Gunicorn/%s)" % gversion
-         
-    web.RequestHandler.clear = clear
-    sys.modules["tornado.web"] = web
-    
-
 class TornadoWorker(Worker):
     
     @classmethod
     def setup(cls):
-        patch_request_handler()
+        web = sys.modules.pop("tornado.web")
+        old_clear = web.RequestHandler.clear
+        def clear(self):
+            old_clear(self)
+            self._headers["Server"] += " (Gunicorn/%s)" % gversion
+        web.RequestHandler.clear = clear
+        sys.modules["tornado.web"] = web
         
     def watchdog(self):
         self.notify()
@@ -50,9 +42,9 @@ class TornadoWorker(Worker):
         # Assume the app is a WSGI callable if its not an
         # instance of tornardo.web.Application
         if not isinstance(self.app, tornado.web.Application):
-            self.app = WSGIContainer(self.app)
+            self.app = WSGIContainer(self.wsgi)
 
-        server = HTTPServer(self.app, io_loop=self.ioloop)
+        server = HTTPServer(self.wsgi, io_loop=self.ioloop)
         server._socket = self.socket
         server.start(num_processes=1)
 

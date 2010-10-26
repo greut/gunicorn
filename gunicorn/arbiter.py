@@ -5,7 +5,6 @@
 
 from __future__ import with_statement
 
-import copy
 import errno
 import logging
 import os
@@ -15,10 +14,12 @@ import sys
 import time
 import traceback
 
+from gunicorn.errors import HaltServer
 from gunicorn.pidfile import Pidfile
 from gunicorn.sock import create_socket
-from gunicorn.workers.sync import SyncWorker
 from gunicorn import util
+
+from gunicorn import __version__, SERVER_SOFTWARE
 
 class Arbiter(object):
     """
@@ -26,7 +27,12 @@ class Arbiter(object):
     kills them if needed. It also manages application reloading
     via SIGHUP/USR2.
     """
-    
+
+    # A flag indicating if a worker failed to
+    # to boot. If a worker process exist with
+    # this error code, the arbiter will terminate.
+    WORKER_BOOT_ERROR = 3
+
     START_CTX = {}
     
     LISTENER = None
@@ -44,46 +50,60 @@ class Arbiter(object):
         if name[:3] == "SIG" and name[3] != "_"
     )
     
-    def __init__(self, cfg, app):
-        self.cfg = cfg
-        self.app = app
-
+    def __init__(self, app):
         self.log = logging.getLogger(__name__)
+        self.log.info("Starting gunicorn %s" % __version__)
+       
+        os.environ["SERVER_SOFTWARE"] = SERVER_SOFTWARE
 
-        self.address = cfg.address
-        self.num_workers = cfg.workers
-        self.debug = cfg.debug
-        self.timeout = cfg.timeout
-        self.proc_name = cfg.proc_name
-        
-        try:
-            self.worker_class = cfg.worker_class
-        except ImportError, e:
-            self.log.error("%s" % e)
-            sys.exit(1)
+        self.setup(app)
         
         self.pidfile = None
         self.worker_age = 0
         self.reexec_pid = 0
         self.master_name = "Master"
- 
+        
         # get current path, try to use PWD env first
         try:
-            a = os.stat(os.environ('PWD'))
+            a = os.stat(os.environ['PWD'])
             b = os.stat(os.getcwd())
             if a.ino == b.ino and a.dev == b.dev:
-                cwd = os.environ('PWD')
+                cwd = os.environ['PWD']
             else:
                 cwd = os.getcwd()
         except:
             cwd = os.getcwd()
             
+        args = sys.argv[:]
+        args.insert(0, sys.executable)
+
         # init start context
         self.START_CTX = {
-            "argv": copy.copy(sys.argv),
+            "args": args,
             "cwd": cwd,
-            0: copy.copy(sys.argv[0])
+            0: sys.executable
         }
+        
+    def setup(self, app):
+        self.app = app
+        self.cfg = app.cfg
+        self.address = self.cfg.address
+        self.num_workers = self.cfg.workers
+        self.debug = self.cfg.debug
+        self.timeout = self.cfg.timeout
+        self.proc_name = self.cfg.proc_name
+        self.worker_class = self.cfg.worker_class
+        
+        if self.cfg.debug:
+            self.log.debug("Current configuration:")
+            for config, value in sorted(self.cfg.settings.iteritems()):
+                self.log.debug("  %s: %s" % (config, value.value))
+        
+        if self.cfg.preload_app:
+            if not self.cfg.debug:
+                self.app.wsgi()
+            else:
+                self.log.warning("debug mode: app isn't preloaded.")
 
     def start(self):
         """\
@@ -91,12 +111,16 @@ class Arbiter(object):
         """
         self.pid = os.getpid()
         self.init_signals()
-        self.LISTENER = create_socket(self.cfg)
-        self.pidfile = Pidfile(self.cfg.pidfile)
-        self.pidfile.create(self.pid)
-        self.log.info("Arbiter booted")
-        self.log.info("Listening at: %s" % self.LISTENER)
+        if not self.LISTENER:
+            self.LISTENER = create_socket(self.cfg)
         
+        if self.cfg.pidfile is not None:
+            self.pidfile = Pidfile(self.cfg.pidfile)
+            self.pidfile.create(self.pid)
+        self.log.debug("Arbiter booted")
+        self.log.info("Listening at: %s (%s)" % (self.LISTENER,
+            self.pid))
+        self.cfg.when_ready(self)
     
     def init_signals(self):
         """\
@@ -104,7 +128,7 @@ class Arbiter(object):
         are queued. Child signals only wake up the master.
         """
         if self.PIPE:
-            map(lambda p: p.close(), self.PIPE)
+            map(lambda p: os.close(p), self.PIPE)
         self.PIPE = pair = os.pipe()
         map(util.set_non_blocking, pair)
         map(util.close_on_exec, pair)
@@ -144,11 +168,15 @@ class Arbiter(object):
                     continue
                 self.log.info("Handling signal: %s" % signame)
                 handler()  
-                self.wakeup()   
+                self.wakeup()
             except StopIteration:
-                break
+                self.halt()
             except KeyboardInterrupt:
-                break
+                self.halt()
+            except HaltServer, inst:
+                self.halt(reason=inst.reason, exit_status=inst.exit_status)
+            except SystemExit:
+                raise
             except Exception:
                 self.log.info("Unhandled exception in main loop:\n%s" %  
                             traceback.format_exc())
@@ -157,12 +185,6 @@ class Arbiter(object):
                     self.pidfile.unlink()
                 sys.exit(-1)
 
-        self.stop()
-        self.log.info("Shutting down: %s" % self.master_name)
-        if self.pidfile is not None:
-            self.pidfile.unlink()
-        sys.exit(0)
-        
     def handle_chld(self, sig, frame):
         "SIGCHLD handling"
         self.wakeup()
@@ -171,12 +193,12 @@ class Arbiter(object):
     def handle_hup(self):
         """\
         HUP handling.
-        Entirely reloading the application including gracefully
-        restart the workers and rereading the configuration.
+        - Reload configuration
+        - Start the new worker processes with a new configuration
+        - Gracefully shutdown the old worker processes
         """
         self.log.info("Hang up: %s" % self.master_name)
-        self.reexec()
-        raise StopIteration
+        self.reload()
         
     def handle_quit(self):
         "SIGQUIT handling"
@@ -230,7 +252,7 @@ class Arbiter(object):
         "SIGWINCH handling"
         if os.getppid() == 1 or os.getpgrp() != os.getpid():
             self.logger.info("graceful stop of workers")
-            self.kill_workers(True)
+            self.kill_workers(signal.SIGQUIT)
         else:
             self.log.info("SIGWINCH ignored. Not daemonized")
     
@@ -244,6 +266,16 @@ class Arbiter(object):
             if e.errno not in [errno.EAGAIN, errno.EINTR]:
                 raise
                     
+    def halt(self, reason=None, exit_status=0):
+        """ halt arbiter """
+        self.stop()
+        self.log.info("Shutting down: %s" % self.master_name)
+        if reason is not None:
+            self.log.info("Reason: %s" % reason)
+        if self.pidfile is not None:
+            self.pidfile.unlink()
+        sys.exit(exit_status)
+        
     def sleep(self):
         """\
         Sleep until PIPE is readable or we timeout.
@@ -263,6 +295,7 @@ class Arbiter(object):
                 raise
         except KeyboardInterrupt:
             sys.exit()
+            
     
     def stop(self, graceful=True):
         """\
@@ -276,7 +309,7 @@ class Arbiter(object):
         if not graceful:
             sig = signal.SIGTERM
         limit = time.time() + self.timeout
-        while self.WORKERS or time.time() > limit:
+        while self.WORKERS and time.time() < limit:
             self.kill_workers(sig)
             time.sleep(0.1)
             self.reap_workers()
@@ -287,7 +320,7 @@ class Arbiter(object):
         Relaunch the master and workers.
         """
         if self.pidfile is not None:
-            self.pidfile.rename("%s.oldbin" % self.pidfile.path)         
+            self.pidfile.rename("%s.oldbin" % self.pidfile.fname)
         
         self.reexec_pid = os.fork()
         if self.reexec_pid != 0:
@@ -296,9 +329,41 @@ class Arbiter(object):
             
         os.environ['GUNICORN_FD'] = str(self.LISTENER.fileno())
         os.chdir(self.START_CTX['cwd'])
-        self.cfg.before_exec(self)
-        os.execlp(self.START_CTX[0], *self.START_CTX['argv'])
+        self.cfg.pre_exec(self)
+        os.execvpe(self.START_CTX[0], self.START_CTX['args'], os.environ)
+        
+    def reload(self):
+        old_address = self.cfg.address
 
+        # reload conf
+        self.app.reload()
+        self.setup(self.app)
+
+        # do we need to change listener ?
+        if old_address != self.cfg.address:
+            self.LISTENER.close()
+            self.LISTENER = create_socket(self.cfg)
+            self.log.info("Listening at: %s" % self.LISTENER)    
+
+        # spawn new workers with new app & conf
+        for i in range(self.app.cfg.workers):
+            self.spawn_worker()
+        
+        # unlink pidfile
+        if self.pidfile is not None:
+            self.pidfile.unlink()
+
+        # create new pidfile
+        if self.cfg.pidfile is not None:
+            self.pidfile = Pidfile(self.cfg.pidfile)
+            self.pidfile.create(self.pid)
+            
+        # set new proc_name
+        util._setproctitle("master [%s]" % self.proc_name)
+        
+        # manage workers
+        self.manage_workers()
+        
     def murder_workers(self):
         """\
         Kill unused/idle workers
@@ -321,10 +386,17 @@ class Arbiter(object):
         try:
             while True:
                 wpid, status = os.waitpid(-1, os.WNOHANG)
-                if not wpid: break
+                if not wpid:
+                    break
                 if self.reexec_pid == wpid:
                     self.reexec_pid = 0
                 else:
+                    # A worker said it cannot boot. We'll shutdown
+                    # to avoid infinite start/stop cycles.
+                    exitcode = status >> 8
+                    if exitcode == self.WORKER_BOOT_ERROR:
+                        reason = "Worker failed to boot."
+                        raise HaltServer(reason, self.WORKER_BOOT_ERROR)
                     worker = self.WORKERS.pop(wpid, None)
                     if not worker:
                         continue
@@ -349,6 +421,40 @@ class Arbiter(object):
                     pid, age = wpid, worker.age
             self.kill_worker(pid, signal.SIGQUIT)
             
+    def spawn_worker(self):
+        self.worker_age += 1
+        worker = self.worker_class(self.worker_age, self.pid, self.LISTENER,
+                                    self.app, self.timeout/2.0, self.cfg)
+        self.cfg.pre_fork(self, worker)
+        pid = os.fork()
+        if pid != 0:
+            self.WORKERS[pid] = worker
+            return
+
+        # Process Child
+        worker_pid = os.getpid()
+        try:
+            util._setproctitle("worker [%s]" % self.proc_name)
+            self.log.info("Booting worker with pid: %s" % worker_pid)
+            self.cfg.post_fork(self, worker)
+            worker.init_process()
+            sys.exit(0)
+        except SystemExit:
+            raise
+        except:
+            self.log.exception("Exception in worker process:")
+            if not worker.booted:
+                sys.exit(self.WORKER_BOOT_ERROR)
+            sys.exit(-1)
+        finally:
+            self.log.info("Worker exiting (pid: %s)" % worker_pid)
+            try:
+                worker.tmp.close()
+                self.cfg.worker_exit(self, worker)
+                os.unlink(worker.tmpname)
+            except:
+                pass
+
     def spawn_workers(self):
         """\
         Spawn new workers as needed.
@@ -358,36 +464,7 @@ class Arbiter(object):
         """
         
         for i in range(self.num_workers - len(self.WORKERS.keys())):
-            self.worker_age += 1
-            worker = self.worker_class(self.worker_age, self.pid, self.LISTENER,
-                                        self.app, self.timeout/2.0, self.cfg)
-            self.cfg.before_fork(self, worker)
-            pid = os.fork()
-            if pid != 0:
-                self.WORKERS[pid] = worker
-                continue
-
-            # Process Child
-            worker_pid = os.getpid()
-            try:
-                util._setproctitle("worker [%s]" % self.proc_name)
-                self.log.debug("Booting worker: %s (age: %s)" % (
-                                                worker_pid, self.worker_age))
-                self.cfg.after_fork(self, worker)
-                worker.init_process()
-                sys.exit(0)
-            except SystemExit:
-                raise
-            except:
-                self.log.exception("Exception in worker process.")
-                sys.exit(-1)
-            finally:
-                self.log.info("Worker exiting (pid: %s)" % worker_pid)
-                try:
-                    worker.tmp.close()
-                    os.unlink(worker.tmpname)
-                except:
-                    pass
+            self.spawn_worker()
 
     def kill_workers(self, sig):
         """\
@@ -411,7 +488,9 @@ class Arbiter(object):
                 try:
                     worker = self.WORKERS.pop(pid)
                     worker.tmp.close()
+                    self.cfg.worker_exit(self, worker)
                     os.unlink(worker.tmpname)
+                    return
                 except (KeyError, OSError):
                     return
             raise            

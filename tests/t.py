@@ -4,6 +4,8 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
+from __future__ import with_statement
+
 import array
 import os
 from StringIO import StringIO
@@ -11,8 +13,7 @@ import tempfile
 
 dirname = os.path.dirname(__file__)
 
-from gunicorn.http.parser import Parser
-from gunicorn.http.request import Request
+from gunicorn.http.parser import RequestParser
 from gunicorn.config import Config
 
 def data_source(fname):
@@ -30,7 +31,7 @@ class request(object):
     def __call__(self, func):
         def run():
             src = data_source(self.fname)
-            func(src, Parser())
+            func(src, RequestParser(src))
         run.func_name = func.func_name
         return run
         
@@ -75,7 +76,7 @@ class http_request(object):
     def __call__(self, func):
         def run():
             fsock = FakeSocket(data_source(self.fname))
-            req = Request(fsock, ('127.0.0.1', 6000), ('127.0.0.1', 8000), Config({}))
+            req = Request(Config(), fsock, ('127.0.0.1', 6000), ('127.0.0.1', 8000))
             func(req)
         run.func_name = func.func_name
         return run
@@ -103,6 +104,9 @@ def has(a, b):
 
 def hasnot(a, b):
     assert not hasattr(a, b), "%r has an attribute %r" % (a, b)
+
+def istype(a, b):
+    assert isinstance(a, b), "%r is not an instance of %r" % (a, b)
 
 def raises(exctype, func, *args, **kwargs):
     try:

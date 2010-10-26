@@ -3,16 +3,7 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
-from gunicorn.http.parser import Parser
-from gunicorn.http.request import Request, KeepAliveRequest, RequestError
-from gunicorn.http.response import Response, KeepAliveResponse
+from gunicorn.http.message import Message, Request
+from gunicorn.http.parser import RequestParser
 
-__all__ = [
-    Parser,
-    Request,
-    KeepAliveRequest,
-    RequestError,
-    Response,
-    KeepAliveResponse
-]
-    
+__all__ = [Message, Request, RequestParser]

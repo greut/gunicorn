@@ -1,5 +1,5 @@
 Gunicorn THANKS
-=====================
+===============
 
 A number of people have contributed to Gunicorn by reporting problems,
 suggesting improvements or submitting changes. Some of these people are:
@@ -10,3 +10,11 @@ Johan Bergström <bugs@bergstroem.nu>
 Xavier Grangier <grangier@gmail.com>
 Sergey Shepelev <temotor@gmail.com>
 Chris Dent <chris.dent@gmail.com>
+Matt Good <matt@matt-good.net>
+Randall Leeds <randall.leeds@gmail.com>
+thomasst <http://github.com/thomasst>
+Jonas Borgström <http://github.com/jborg>
+PA Parent <paparent@paparent.me>
+Travis Cline <travis.cline@gmail.com>
+Adrien Lemaire <lemaire.adrien@gmail.com>
+Oliver Tonnhofer <olt@bogosoft.com>

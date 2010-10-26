@@ -10,21 +10,19 @@ import select
 import socket
 import traceback
 
-from gunicorn import http, util
-from gunicorn.http.tee import UnexpectedEOF
-from gunicorn.workers.base import Worker
+import gunicorn.http as http
+import gunicorn.http.wsgi as wsgi
+import gunicorn.util as util
+import gunicorn.workers.base as base
 
-class SyncWorker(Worker):
+class SyncWorker(base.Worker):
     
     def run(self):
-        self.nr = 0
-
         # self.socket appears to lose its blocking status after
         # we fork in the arbiter. Reset it here.
         self.socket.setblocking(0)
 
         while self.alive:
-            self.nr = 0
             self.notify()
             
             # Accept a connection. If we get an error telling us
@@ -36,17 +34,16 @@ class SyncWorker(Worker):
                 client.setblocking(1)
                 util.close_on_exec(client)
                 self.handle(client, addr)
-                self.nr += 1
+
+                # Keep processing clients until no one is waiting. This
+                # prevents the need to select() for every client that we
+                # process.
+                continue
+
             except socket.error, e:
                 if e[0] not in (errno.EAGAIN, errno.ECONNABORTED):
                     raise
 
-            # Keep processing clients until no one is waiting. This
-            # prevents the need to select() for every client that we
-            # process.
-            if self.nr > 0:
-                continue
-            
             # If our parent changed then we shut down.
             if self.ppid != os.getppid():
                 self.log.info("Parent changed, shutting down: %s" % self)
@@ -69,37 +66,45 @@ class SyncWorker(Worker):
         
     def handle(self, client, addr):
         try:
-            self.handle_request(client, addr)
+            parser = http.RequestParser(client)
+            req = parser.next()
+            self.handle_request(req, client, addr)
+        except StopIteration:
+            self.log.debug("Ignored premature client disconnection.")
         except socket.error, e:
             if e[0] != errno.EPIPE:
                 self.log.exception("Error processing request.")
             else:
-                self.log.warn("Ignoring EPIPE")
-        except UnexpectedEOF:
-            self.log.exception("Client closed the connection unexpectedly.")
+                self.log.debug("Ignoring EPIPE")
         except Exception, e:
             self.log.exception("Error processing request.")
             try:            
                 # Last ditch attempt to notify the client of an error.
-                mesg = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
+                mesg = "HTTP/1.1 500 Internal Server Error\r\n\r\n"
                 util.write_nonblock(client, mesg)
             except:
                 pass
         finally:    
             util.close(client)
 
-    def handle_request(self, client, addr):
-        req = http.Request(client, addr, self.address, self.cfg)
+    def handle_request(self, req, client, addr):
         try:
-            environ = req.read()
-            if not environ or not req.parser.status_line:
-                return
-            respiter = self.app(environ, req.start_response)
+            debug = self.cfg.debug or False
+            self.cfg.pre_request(self, req)
+            resp, environ = wsgi.create(req, client, addr,
+                    self.address, self.cfg)
+            self.nr += 1
+            if self.nr >= self.max_requests:
+                self.log.info("Autorestarting worker after current request.")
+                resp.force_close()
+                self.alive = False
+            respiter = self.wsgi(environ, resp.start_response)
             for item in respiter:
-                req.response.write(item)
-            req.response.close()
+                resp.write(item)
+            resp.close()
             if hasattr(respiter, "close"):
                 respiter.close()
+            self.cfg.post_request(self, req)
         except socket.error:
             raise
         except Exception, e:
