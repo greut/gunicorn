@@ -7,8 +7,10 @@ from __future__ import with_statement
 
 
 import os
-
-import eventlet
+try:
+    import eventlet
+except ImportError:
+    raise RuntimeError("You need eventlet installed to use this worker.")
 from eventlet import hubs
 from eventlet.greenio import GreenSocket
 
@@ -41,7 +43,7 @@ class EventletWorker(AsyncWorker):
             if self.ppid != os.getppid():
                 self.log.info("Parent changed, shutting down: %s" % self)
                 break
-            eventlet.sleep(0.1)
+            eventlet.sleep(self.timeout)
 
         self.notify()
         with eventlet.Timeout(self.timeout, False):
