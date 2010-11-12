@@ -93,10 +93,13 @@ class SyncWorker(base.Worker):
             self.cfg.pre_request(self, req)
             resp, environ = wsgi.create(req, client, addr,
                     self.address, self.cfg)
+            # Force the connection closed until someone shows
+            # a buffering proxy that supports Keep-Alive to
+            # the backend.
+            resp.force_close()
             self.nr += 1
             if self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")
-                resp.force_close()
                 self.alive = False
             respiter = self.wsgi(environ, resp.start_response)
             for item in respiter:
@@ -104,7 +107,6 @@ class SyncWorker(base.Worker):
             resp.close()
             if hasattr(respiter, "close"):
                 respiter.close()
-            self.cfg.post_request(self, req)
         except socket.error:
             raise
         except Exception, e:
@@ -113,3 +115,9 @@ class SyncWorker(base.Worker):
                 raise
             util.write_error(client, traceback.format_exc())
             return
+        finally:
+            try:
+                self.cfg.post_request(self, req)
+            except:
+                pass
+
