@@ -251,7 +251,8 @@ class Arbiter(object):
     def handle_winch(self):
         "SIGWINCH handling"
         if os.getppid() == 1 or os.getpgrp() != os.getpid():
-            self.logger.info("graceful stop of workers")
+            self.log.info("graceful stop of workers")
+            self.num_workers = 0
             self.kill_workers(signal.SIGQUIT)
         else:
             self.log.info("SIGWINCH ignored. Not daemonized")
@@ -451,7 +452,6 @@ class Arbiter(object):
             try:
                 worker.tmp.close()
                 self.cfg.worker_exit(self, worker)
-                os.unlink(worker.tmpname)
             except:
                 pass
 
@@ -489,7 +489,6 @@ class Arbiter(object):
                     worker = self.WORKERS.pop(pid)
                     worker.tmp.close()
                     self.cfg.worker_exit(self, worker)
-                    os.unlink(worker.tmpname)
                     return
                 except (KeyError, OSError):
                     return
