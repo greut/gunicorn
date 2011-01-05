@@ -49,6 +49,14 @@ Gunicorn fails to start with upstart
 
 Make sure you run gunicorn with ``--daemon`` option.
 
+Why is there no HTTP Keep-Alive?
+--------------------------------
+
+The default Sync workers are designed to run behind Nginx which only uses
+HTTP/1.0 with its upstream servers. If you want to deploy Gunicorn to
+handle unbuffered requests (ie, serving requests directly from the internet)
+you should use one of the async workers.
+
 .. _slowloris: http://ha.ckers.org/slowloris/
 .. _setproctitle: http://pypi.python.org/pypi/setproctitle
 .. _proc_name: /configure.html#proc-name

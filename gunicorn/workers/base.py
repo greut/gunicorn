@@ -9,10 +9,15 @@ import os
 import random
 import signal
 import sys
-import tempfile
+import traceback
+
 
 from gunicorn import util
 from gunicorn.workers.workertmp import WorkerTmp
+
+from gunicorn.http.errors import InvalidHeader, InvalidHeaderName, \
+InvalidRequestLine, InvalidRequestMethod, InvalidHTTPVersion
+
 
 class Worker(object):
 
@@ -43,7 +48,7 @@ class Worker(object):
         self.log = logging.getLogger(__name__)
         self.debug = cfg.debug
         self.address = self.socket.getsockname()
-        self.tmp = WorkerTmp() 
+        self.tmp = WorkerTmp(cfg) 
         
     def __str__(self):
         return "<Worker %s>" % self.pid
@@ -110,6 +115,35 @@ class Worker(object):
         self.alive = False
         sys.exit(0)
 
+    def handle_error(self, client, exc):
+        if isinstance(exc, (InvalidRequestLine, InvalidRequestMethod,
+            InvalidHTTPVersion, InvalidHeader, InvalidHeaderName,)):
+            
+            if isinstance(exc, InvalidRequestLine):
+                mesg = "<p>Invalid Request Line '%s'</p>" % str(exc)
+            elif isinstance(exc, InvalidRequestMethod):
+                mesg = "<p>Invalid Method'%s'</p>" % str(exc)
+            elif isinstance(exc, InvalidHTTPVersion):
+                mesg = "<p>Invalid HTTP Version '%s'</p>" % str(exc)
+            elif isinstance(exc, (InvalidHeaderName, InvalidHeader,)):
+                mesg = "<p>Invalid Header'%s'</p>" % str(exc)
+            reason = "Bad Request"
+            status_int = 400
+        else:
+            mesg = reason = "Internal Server reason"
+            status_int = 500
+            
+        if self.debug:
+            tb =  traceback.format_exc()
+            mesg += "<h2>Traceback:</23><pre>%s</pre>" % tb
+
+        try:
+            util.write_error(client, mesg, status_int=status_int, 
+                    reason=reason)
+        except:
+            if self.debug:
+                self.log.warning("Unexpected error %s" % traceback.format_exc())
+        
     def handle_winch(self, sig, fname):
         # Ignore SIGWINCH in worker. Fixes a crash on OpenBSD.
         return

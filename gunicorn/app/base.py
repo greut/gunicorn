@@ -8,6 +8,11 @@ import logging
 import os
 import sys
 import traceback
+try:
+    from logging.config import fileConfig
+except ImportError:
+    from gunicorn.logging_config import fileConfig
+
 
 from gunicorn import util
 from gunicorn.arbiter import Arbiter
@@ -28,12 +33,19 @@ class Application(object):
     }
     
     def __init__(self, usage=None):
-        self.log = logging.getLogger(__name__)
         self.usage = usage
         self.cfg = None
         self.callable = None
         self.logger = None
-        self.load_config()
+        self.do_load_config()
+
+    def do_load_config(self):
+        try:
+            self.load_config()
+        except Exception, e:
+            sys.stderr.write("\nError: %s\n" % str(e))
+            sys.stderr.flush()
+            sys.exit(1)
   
     def load_config(self):
         # init configuration
@@ -62,7 +74,7 @@ class Application(object):
             }
             try:
                 execfile(opts.config, cfg, cfg)
-            except Exception, e:
+            except Exception:
                 print "Failed to read config file: %s" % opts.config
                 traceback.print_exc()
                 sys.exit(1)
@@ -91,7 +103,7 @@ class Application(object):
         raise NotImplementedError
 
     def reload(self):
-        self.load_config()
+        self.do_load_config()
         if self.cfg.spew:
             debug.spew()
         loglevel = self.LOG_LEVELS.get(self.cfg.loglevel.lower(), logging.INFO)
@@ -128,19 +140,25 @@ class Application(object):
         """
         self.logger = logging.getLogger('gunicorn')
 
-        handlers = []
-        if self.cfg.logfile != "-":
-            handlers.append(logging.FileHandler(self.cfg.logfile))
-        else:
-            handlers.append(logging.StreamHandler())
-
-        loglevel = self.LOG_LEVELS.get(self.cfg.loglevel.lower(), logging.INFO)
-        self.logger.setLevel(loglevel)
-        
-        format = r"%(asctime)s [%(process)d] [%(levelname)s] %(message)s"
+        fmt = r"%(asctime)s [%(process)d] [%(levelname)s] %(message)s"
         datefmt = r"%Y-%m-%d %H:%M:%S"
-        for h in handlers:
-            h.setFormatter(logging.Formatter(format, datefmt))
-            self.logger.addHandler(h)
+        if not self.cfg.logconfig:
+            handlers = []
+            if self.cfg.logfile != "-":
+                handlers.append(logging.FileHandler(self.cfg.logfile))
+            else:
+                handlers.append(logging.StreamHandler())
+
+            loglevel = self.LOG_LEVELS.get(self.cfg.loglevel.lower(), logging.INFO)
+            self.logger.setLevel(loglevel)
+            for h in handlers:
+                h.setFormatter(logging.Formatter(fmt, datefmt))
+                self.logger.addHandler(h)
+        else:
+            if os.path.exists(self.cfg.logconfig):
+                fileConfig(self.cfg.logconfig)
+            else:
+                raise RuntimeError("Error: logfile '%s' not found." %
+                        self.cfg.logconfig)
 
 

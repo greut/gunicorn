@@ -3,7 +3,6 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
-import logging
 import os
 import sys
 import traceback
@@ -33,28 +32,11 @@ class DjangoApplication(Application):
 
         if not self.settings_modname:
             project_name = os.path.split(self.project_path)[-1]
-            settings_name, ext  = os.path.splitext(os.path.basename(settings_path))
+            settings_name, ext  = os.path.splitext(
+                    os.path.basename(settings_path))
             self.settings_modname = "%s.%s" % (project_name, settings_name)
             os.environ[ENVIRONMENT_VARIABLE] = self.settings_modname
-        else:
-            # try to check if we can import settings already.
-            try:
-                import settings
-            except ImportError:
-                # test if we are already in the project
-                # if not we try to use to find the module in current
-                # directory
-                project_path, settings_name = self.settings_modname.split(".")
-                aproject_path = os.path.abspath(os.path.join(os.getcwd(), 
-                    "..", project_path))
-                
-                if aproject_path != self.project_path:
-                    self.project_path = os.path.join(self.project_path,
-                        project_path)
-                    if not os.path.exists(self.project_path):
-                        return self.no_settings(self.project_path,
-                                import_error=True)
-
+        
         self.cfg.set("default_proc_name", self.settings_modname)
 
         # add the project path to sys.path
@@ -67,9 +49,17 @@ class DjangoApplication(Application):
     def setup_environ(self):
         from django.core.management import setup_environ
         try:
-            import settings
-            setup_environ(settings)
-        except ImportError, e:
+            parts = self.settings_modname.split(".")
+            settings_mod = __import__(self.settings_modname)
+            if len(parts) > 1:
+                settings_mod = __import__(parts[0])
+                path = os.path.dirname(os.path.abspath(
+                            os.path.normpath(settings_mod.__file__)))
+                sys.path.append(path)
+                for part in parts[1:]: 
+                    settings_mod = getattr(settings_mod, part)
+                setup_environ(settings_mod)
+        except ImportError:
             return self.no_settings(self.settings_modname, import_error=True)
 
     def no_settings(self, path, import_error=False):
@@ -90,14 +80,13 @@ class DjangoApplication(Application):
 class DjangoApplicationCommand(Application):
     
     def __init__(self, options, admin_media_path):
-        self.log = logging.getLogger(__name__)
         self.usage = None
         self.cfg = None
         self.config_file = options.get("config") or ""
         self.options = options
         self.admin_media_path = admin_media_path
         self.callable = None
-        self.load_config()
+        self.do_load_config()
 
     def load_config(self):
         self.cfg = Config()
@@ -112,7 +101,7 @@ class DjangoApplicationCommand(Application):
             }
             try:
                 execfile(self.config_file, cfg, cfg)
-            except Exception, e:
+            except Exception:
                 print "Failed to read config file: %s" % self.config_file
                 traceback.print_exc()
                 sys.exit(1)

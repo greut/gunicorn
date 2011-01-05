@@ -146,6 +146,7 @@ class Arbiter(object):
         "Main master loop."
         self.start()
         util._setproctitle("master [%s]" % self.proc_name)
+        
         self.manage_workers()
         while True:
             try:
@@ -363,7 +364,7 @@ class Arbiter(object):
         util._setproctitle("master [%s]" % self.proc_name)
         
         # manage workers
-        self.manage_workers()
+        self.manage_workers() 
         
     def murder_workers(self):
         """\
@@ -379,7 +380,7 @@ class Arbiter(object):
 
             self.log.critical("WORKER TIMEOUT (pid:%s)" % pid)
             self.kill_worker(pid, signal.SIGKILL)
-    
+        
     def reap_workers(self):
         """\
         Reap workers to avoid zombie processes

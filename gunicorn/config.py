@@ -13,6 +13,7 @@ import textwrap
 import types
 
 from gunicorn import __version__
+from gunicorn.errors import ConfigError
 from gunicorn import util
 
 KNOWN_SETTINGS = []
@@ -87,23 +88,11 @@ class Config(object):
         
     @property
     def uid(self):
-        user = self.settings['user'].get()
-        if not user:
-            return os.geteuid()
-        elif user.isdigit() or isinstance(user, int):
-            return int(user)
-        else:
-            return pwd.getpwnam(user).pw_uid
-        
+        return self.settings['user'].get()
+      
     @property
     def gid(self):
-        group = self.settings['group'].get()
-        if not group:
-            return os.getegid()
-        elif group.isdigit() or isinstance(group, int):
-            return int(group)
-        else:
-            return grp.getgrnam(group).gr_gid
+        return self.settings['group'].get()
         
     @property
     def proc_name(self):
@@ -216,6 +205,33 @@ def validate_callable(arity):
         return val
     return _validate_callable
 
+
+def validate_user(val):
+    if val is None:
+        return os.geteuid()
+    if isinstance(val, int):
+        return val
+    elif val.isdigit():
+        return int(val)
+    else:
+        try:
+            return pwd.getpwnam(val).pw_uid
+        except KeyError:
+            raise ConfigError("No such user: '%s'" % val)
+
+def validate_group(val):
+    if val is None:
+        return os.getegid()
+
+    if isinstance(val, int):
+        return val
+    elif val.isdigit():
+        return int(val)
+    else:
+        try:
+            return grp.getgrnam(val).gr_gid
+        except KeyError:
+            raise ConfigError("No such group: '%s'" % val)
 
 class ConfigFile(Setting):
     name = "config"
@@ -446,8 +462,8 @@ class User(Setting):
     section = "Server Mechanics"
     cli = ["-u", "--user"]
     meta = "USER"
-    validator = validate_string
-    default = None
+    validator = validate_user
+    default = os.geteuid()
     desc = """\
         Switch worker processes to run as this user.
         
@@ -461,8 +477,8 @@ class Group(Setting):
     section = "Server Mechanics"
     cli = ["-g", "--group"]
     meta = "GROUP"
-    validator = validate_string
-    default = None
+    validator = validate_group
+    default = os.getegid()
     desc = """\
         Switch worker process to run as this group.
         
@@ -535,6 +551,20 @@ class Loglevel(Setting):
         * warning
         * error
         * critical
+        """
+
+class LogConfig(Setting):
+    name = "logconfig"
+    section = "Logging"
+    cli = ["--log-config"]
+    meta = "FILE"
+    validator = validate_string
+    default = None 
+    desc = """\
+        The log config file to use.
+        
+        Gunicorn uses the standard Python logging module's Configuration
+        file format.
         """
 
 class Procname(Setting):

@@ -56,7 +56,7 @@ class PasterBaseApplication(Application):
                 else:
                     # Use our custom fileConfig -- 2.5.1's with a custom Formatter class
                     # and less strict whitespace (which were incorporated into 2.6's)
-                    from paste.script.util.logging_config import fileConfig
+                    from gunicorn.logging_config import fileConfig
 
                 config_file = os.path.abspath(self.cfgfname)
                 fileConfig(config_file, dict(__file__=config_file,
@@ -114,9 +114,14 @@ class PasterServerApplication(PasterBaseApplication):
                 cfg[k] = v
             cfg["default_proc_name"] = cfg['__file__']
 
-        for k, v in list(cfg.items()):
-            if k.lower() in self.cfg.settings and v is not None:
-                self.cfg.set(k.lower(), v)
+        try:
+            for k, v in list(cfg.items()):
+                if k.lower() in self.cfg.settings and v is not None:
+                    self.cfg.set(k.lower(), v)
+        except Exception, e:
+            sys.stderr.write("\nConfig error: %s\n" % str(e))
+            sys.stderr.flush()
+            sys.exit(1)
 
         self.configure_logging()
 
